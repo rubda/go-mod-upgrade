@@ -90,6 +90,15 @@ func formatTo(module Module) string {
 	return buf.String()
 }
 
+func formatCommitMessage(module Module) string {
+	commitMessage := fmt.Sprintf("chore(deps): bump %s from %s to %s", module.name, module.from, module.to)
+	if len(commitMessage) > 72 {
+		commitMessage = commitMessage[:72] + "\n\n" + commitMessage[72:]
+	}
+
+	return commitMessage
+}
+
 type Module struct {
 	name string
 	from *semver.Version
@@ -195,7 +204,17 @@ func update(modules []Module) {
 		fmt.Fprintf(color.Output, "Updating %s to version %s...\n", formatName(x, len(x.name)), formatTo(x))
 		out, err := exec.Command("go", "get", x.name).CombinedOutput()
 		if err != nil {
-			fmt.Printf("Error while updating %s: %s\n", x.name, string(out))
+			log.Fatalf("Error while updating %s: %s\n", x.name, string(out))
+		}
+
+		out, err = exec.Command("bazel", "run", "//:gazelle-external", "--", "update-repos", "-from_file=src/go.mod", "-prune", "-to_macro=go_deps.bzl%go_dependencies").CombinedOutput()
+		if err != nil {
+			log.Fatalf("Error while bazel updating %s: %s\n", x.name, string(out))
+		}
+
+		out, err = exec.Command("git", "commit", "-am", formatCommitMessage(x)).CombinedOutput()
+		if err != nil {
+			log.Fatalf("Error while commiting update of %s: %s\n", x.name, string(out))
 		}
 	}
 }
